@@ -1,0 +1,42 @@
+[project]
+name = "llm-tool-til"
+version = "0.1.0"
+description = "Til toolbox for Simon Willison's LLM: write markdown TIL notes into ~/.kb/"
+readme = "README.md"
+authors = [
+    {name = "Radoslaw Stachowiak"},
+]
+requires-python = ">=3.10"
+license = "MIT"
+keywords = ["llm", "llm-plugin", "til", "notes", "markdown"]
+dependencies = [
+    "llm>=0.26",
+]
+
+[project.urls]
+Homepage = "https://github.com/rdslw/llm-tool-til"
+Issues = "https://github.com/rdslw/llm-tool-til/issues"
+
+[project.entry-points.llm]
+til = "llm_tool_til"
+
+[dependency-groups]
+dev = ["pytest>=8", "llm-echo>=0.4"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+exclude-newer = "34 hours"
+default-groups = ["dev"]
+
+[tool.hatch.build.targets.wheel]
+only-include = ["llm_tool_til.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.sdist]
+include = ["llm_tool_til.py", "tests/*.py", "README.md", "AGENTS.md"]

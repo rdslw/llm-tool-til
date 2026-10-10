@@ -1,0 +1,44 @@
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  # GitHub auto-disables schedules after ~60 days without repo commits;
+  # check state / re-enable (both idempotent):
+  #   gh workflow list --all      # State column: disabled_inactivity
+  #   gh workflow enable test.yml
+  schedule:
+    - cron: "0 6 2 * *"  # monthly: catch new llm releases breaking us
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # default fail-fast cancels remaining matrix jobs on first failure —
+      # we want the full answer to "which Python versions break?"
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run tests
+        run: uv run pytest

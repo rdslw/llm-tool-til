@@ -1,0 +1,14 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.eggs/
+*.egg-info/
+dist/
+build/
+.DS_Store
+tmp/
+uv.lock
