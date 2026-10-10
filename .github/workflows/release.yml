@@ -1,0 +1,47 @@
+name: Release
+
+# Pushing an annotated tag vX.Y.Z makes the GitHub release: no local `gh`, only git.
+# Release notes = the tag message (gh --notes-from-tag). See README "Release".
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # v6+ fetches the pushed tag by name, so the annotated tag (and its
+      # message) is present; v4/v5 made it a lightweight tag on the commit.
+      - uses: actions/checkout@v7
+
+      - name: Check tag is annotated vX.Y.Z
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "::error::tag '$GITHUB_REF_NAME' is not vX.Y.Z"; exit 1; }
+          [ "$(git cat-file -t "$GITHUB_REF_NAME")" = tag ] \
+            || { echo "::error::tag '$GITHUB_REF_NAME' is lightweight; use git tag -a"; exit 1; }
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Test
+        run: |
+          uv sync --all-groups
+          uv run pytest
+
+      # hatch-vcs takes the version from the tag: the wheel name proves it.
+      - name: Check built version is the tag
+        run: |
+          uv build
+          ls "dist/llm_tool_til-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag

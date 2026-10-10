@@ -1,6 +1,6 @@
 [project]
 name = "llm-tool-til"
-version = "0.1.0"
+dynamic = ["version"]  # from the git tag vX.Y.Z (hatch-vcs); see README "Release"
 description = "Til toolbox for Simon Willison's LLM: write markdown TIL notes into ~/.kb/"
 readme = "README.md"
 authors = [
@@ -24,13 +24,22 @@ til = "llm_tool_til"
 dev = ["pytest>=8", "llm-echo>=0.4"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+# N commits after tag v0.1.0 -> 0.1.0.postN+g<hash> (default would guess 0.1.1.devN)
+version_scheme = "post-release"
 
 [tool.uv]
 package = true
 exclude-newer = "34 hours"
 default-groups = ["dev"]
+# rebuild the local package when the commit or the tags change: the version comes from git
+cache-keys = [{ file = "pyproject.toml" }, { git = { commit = true, tags = true } }]
 
 [tool.hatch.build.targets.wheel]
 only-include = ["llm_tool_til.py"]

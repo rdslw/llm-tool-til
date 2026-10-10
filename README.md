@@ -2,7 +2,7 @@
 
 Til toolbox and `llm til` command for [Simon Willison's LLM](https://llm.datasette.io/).
 
-After a long conversation with `llm`, ask the model for a summary, a primer, or
+After a conversation with `llm`, ask the model for a summary, a primer, or
 documentation of the conversation. The model writes it as a markdown note into
 `~/.kb/`, with a name like `til-2610-git-rebase-onto.md`. Two ways:
 
@@ -15,6 +15,7 @@ The model does the important work: it selects the content, the structure and the
 markdown format. The plugin only stores the notes safely.
 
 `AGENTS.md` points at this file, so keep operational project knowledge here.
+`Development` and `Release` sections are at the bottom.
 
 ## Installation
 
@@ -26,19 +27,7 @@ llm install -e /path/to/llm-tool-til
 
 # from GitHub (for SSH access: git+ssh://git@github.com/rdslw/llm-tool-til)
 llm install 'git+https://github.com/rdslw/llm-tool-til'
-
-# from GitHub, a fixed release
-llm install 'git+https://github.com/rdslw/llm-tool-til@v0.1.0'
 ```
-
-Then create `~/.kb/` once (the toolbox never creates it) and check the install:
-
-```bash
-mkdir ~/.kb
-llm tools list | grep Til_                  # shows the five Til_ tools
-```
-
-`llm install` also works when `llm` is a `uv tool`, because `llm` depends on `pip`.
 
 ## Usage
 
@@ -63,10 +52,7 @@ llm til 'Write a primer of the asyncio part only.' --slug asyncio-primer
 llm til --cid 01k0abcd...
 ```
 
-`llm` stops after 5 tool calls in one prompt by default. For many edits, use a
-higher limit, e.g. `--chain-limit 15`.
-
-## Tools
+## Tools implemented
 
 | Tool | Use |
 | --- | --- |
@@ -74,20 +60,13 @@ higher limit, e.g. `--chain-limit 15`.
 | `Til_str_replace(filename, old_str, new_str)` | Replace text that occurs exactly once in a `.md` or `.txt` file. |
 | `Til_view(filename)` | Return the full text of a file. |
 | `Til_list_files()` | List the file names, newest first. |
-| `Til_search(query)` | Find `query` (plain text, case-insensitive) in all files. Output like `grep -n -i -C3`, newest files first. |
+| `Til_search(query)` | Find `query` (plain text, case-insensitive) in all files (newest first). |
 
-Two groups of files:
-
-- Notes: `til-YYMM-<slug>.md`. The tools can create, edit, view, list and search them.
-  `YYMM` is the local year and month at creation. The model gives only the `slug`:
-  1-60 characters from `[a-zA-Z0-9_.-]`. Example: slug `git-rebase-onto` gives
-  `til-2610-git-rebase-onto.md`.
-- Other files directly in `~/.kb/` with the extension `.md`, `.txt` or `.sh`
-  (any case), or with no extension. The tools can view, list and search them.
-  `Til_str_replace` can edit the `.md` and `.txt` files; `.sh` files and files
-  without an extension are read-only.
-
-Newest first means last changed first (file modification time).
+`Til_search` is pure Python, not a call to `rg` or `grep`. It has the same output
+format as `grep -n -i -C3`, but it needs no external program, has the same
+behavior on Linux and macOS, ignores `~/.ripgreprc` and locale settings, and
+applies the same file name and symlink checks as the other tools, while it
+allows easier limits implementation and enforcing.
 
 `Til_search("docker")` output, for two files (`:` marks a matching line, `-` a
 context line):
@@ -131,64 +110,17 @@ Limits (constants in `llm_tool_til.py`):
 
 ## Context Cost
 
-`-T Til` adds the definitions of the five tools to every request. As JSON in the
-OpenAI function format that `llm` sends, they are 1508 characters, about 420
-tokens (422 with the `o200k_base` tokenizer, 426 with `cl100k_base`). The budget
-is 450 tokens.
-
-| Tool | Tokens |
-| --- | --- |
-| `Til_create` | 132 |
-| `Til_str_replace` | 111 |
-| `Til_search` | 79 |
-| `Til_view` | 58 |
-| `Til_list_files` | 46 |
-
-273 of the 422 tokens are fixed JSON structure: tool names, parameter names and
-types. Only the remaining tokens are description text. The descriptions give
-only what the model needs before the first call; guidance for a failed call is in
-the error messages, which cost tokens only when an error occurs.
-
-Providers convert the definitions to their own format and can add fixed tool-use
-instructions, so the billed number is different. The JSON count is an upper
-bound: `codex/gpt-6-luna` (plugin `llm-openai-codex` 0.8.0) bills the five
-definitions as 244 tokens. To see the real number for a model, compare
-`llm -u -m MODEL 'hi'` with `llm -u -m MODEL -T Til 'hi'`.
-
-Each tool call adds one more request to the chain, and each request sends the full
-conversation again: the earlier messages, the tool definitions, and all earlier
-tool calls and tool results.
-
-- After a long conversation, `llm -c -T Til '...'` sends that conversation at
-  least two times: once to get the tool call, and once with the tool result.
-- The note text that the model gives to `Til_create` or `Til_str_replace` costs
-  output tokens once. After that, it is input in each later request of the chain
-  and of later `llm -c` prompts.
-- Provider prompt caching, if available, makes the repeated input cheaper. Check
-  it, do not assume it: `llm logs --json` shows the cached tokens of each request
-  if the provider reports them. With `codex/gpt-6-luna` and `llm-openai-codex`
-  0.8.0, all requests in the tests below had 0 cached tokens: that plugin
-  version sends no `session-id` header, so the backend gives each request a
-  random cache key. With a patched plugin that sends the conversation ID as
-  `session-id`, request 2 of a tool chain had 6,656 of 7,072 input tokens
-  cached.
-- The `Til_create` result tells the model "Do not repeat full note text.", so
-  the final answer does not pay for the note a second time.
-- `llm til` avoids the second request and keeps the note out of later `llm -c`
-  prompts; see the next section.
-
-Upper bounds for one tool result, at the limits above (`o200k_base`, English
-text; other languages and code give more tokens):
-
-| Tool result | Upper bound |
-| --- | --- |
-| `Til_create`, `Til_str_replace` | about 30 tokens (one status line), about 50 for an error line |
-| `Til_list_files`, 400 names | about 4,000 tokens |
-| `Til_view`, 100 KB | about 20,000-25,000 tokens |
-| `Til_search`, 600 lines of 200 characters | about 30,000-35,000 tokens |
-
-The docstrings of the tool methods are the tool descriptions, so keep them short.
-Recount the definition tokens after a change:
+- `-T Til` adds the five tool definitions to every request: about 420 tokens
+  as JSON (budget 450). `codex/gpt-6-luna` bills them as 244. Measure:
+  `llm -u -m MODEL 'hi'` with and without `-T Til`.
+- Each tool call is one more request with the full conversation, so a note
+  costs the conversation at least twice. The note text is input again in later
+  requests. `llm til` avoids both.
+- Caching makes repeats cheaper; check `cached_tokens` in `llm logs --json`.
+- One tool result costs at most about 4,000 (`Til_list_files`), 25,000
+  (`Til_view`) or 35,000 tokens (`Til_search`).
+- Keep the docstrings (tool descriptions) short; error guidance goes in the
+  error messages. Recount after a change:
 
 ```bash
 uv run --with tiktoken python -c 'import json, tiktoken, llm_tool_til as t; d = [{"type": "function", "function": {"name": x.name, "description": x.description, "parameters": x.input_schema}} for x in t.Til.method_tools()]; print(len(tiktoken.get_encoding("o200k_base").encode(json.dumps(d))))'
@@ -200,124 +132,113 @@ uv run --with tiktoken python -c 'import json, tiktoken, llm_tool_til as t; d = 
 llm til [PROMPT] [--cid ID] [-m MODEL] [--slug SLUG] [--log]
 ```
 
-It sends one request: the logged conversation (the latest one, or `--cid`), then
-PROMPT. It sends no tool definitions. The reply streams to the terminal, and the
-plugin writes it to a new note `~/.kb/til-YYMM-<slug>.md`.
+One request: the logged conversation (the latest, or `--cid`) and PROMPT, to
+the model of the conversation (or `-m`), without tool definitions. The reply
+streams to the terminal and goes to a new note `~/.kb/til-YYMM-<slug>.md`.
 
-- PROMPT replaces the default prompt `TIL_PROMPT` (55 tokens):
-  "Write a markdown TIL note of this conversation for a senior engineer who will
-  reread it to recall the topic: key facts, decisions, commands, pitfalls. Be
-  concise; use lists; add a diagram if it helps. Use ASD-STE100 Simplified
-  Technical English."
-- The plugin always adds `TIL_OUTPUT_RULE` (30 tokens) after the prompt: "Reply
-  with only the markdown note, starting with a short '# Title' line. Use
-  impersonal README style, without 'I' or 'you'."
-- `--slug` gives the slug. Without it, the slug comes from the `# Title` line:
-  ASCII, lowercase, other characters become `-`, a leading word `til` is
-  removed, at most 50 characters cut at a word boundary, or `note` if there is
-  no title.
-- If the file name is in use, the plugin adds `-2`, `-3`, ... up to `-99` and
-  shows a warning. It never overwrites a file.
-- `-m` uses another model than the model of the conversation.
-- Logging is off: the reply is not stored in the conversation, so a later
-  `llm -c` does not send the note again. `--log` stores it in the conversation.
-  Without `--log`, `llm logs` has no record of the request and its token usage.
-- Before the request, the plugin checks `~/.kb/`, `--slug`, the conversation
-  and the model, so an error costs nothing.
-- The same safety rules and limits as for `Til_create` apply. If the file cannot
-  be written (larger than 100 KB or 2000 lines, all names up to `-99` in use, a
-  file system error), the plugin stores the paid reply in the conversation logs
-  also without `--log`; `llm logs -n 1` shows it. If the reply has no text, or
-  is a tool call, no file is written.
+- PROMPT replaces `TIL_PROMPT` (55 tokens: note for a senior engineer; facts,
+  decisions, commands, pitfalls; concise lists; ASD-STE100).
+  `TIL_OUTPUT_RULE` (30 tokens) is always added: only the note, a short
+  `# Title`, impersonal README style.
+- Slug: `--slug`, else from the `# Title` (ASCII, lowercase, no leading `til`,
+  at most 50 characters), else `note`. A name in use gets `-2` ... `-99` and a
+  warning; no overwrite.
+- Not logged, so a later `llm -c` does not send the note again (and `llm logs`
+  has no usage record); `--log` stores it. If the file cannot be written, the
+  reply is logged anyway (`llm logs -n 1`).
+- `~/.kb/`, `--slug`, the conversation and the model are checked before the
+  paid request. `Til_create` safety rules and limits apply.
 
-Cost for the example of a 20,000-token conversation and a 1,500-token note
-(definitions counted as 244 tokens, as billed by `codex/gpt-6-luna`):
-
-| Command | Requests | Input tokens | Output tokens |
+| 20,000-token conversation, 1,500-token note | Requests | Input tokens | Output tokens |
 | --- | --- | --- | --- |
-| `llm -c -T Til '...'` | 2 | about 42,000, less if the provider caches | about 1,550 |
+| `llm -c -T Til '...'` | 2 | about 42,000 (less with caching) | about 1,550 |
 | `llm til` | 1 | about 20,100 | about 1,500 |
-
-Measured with `codex/gpt-6-luna` (plugin `llm-openai-codex` 0.8.0), after a
-2,162-token conversation (46 input, 2,116 output):
-
-| Command | Request | Input tokens | Output tokens | Cached |
-| --- | --- | --- | --- | --- |
-| `llm -c -T Til 'Save a TIL note of this conversation.'` | 1: tool call | 2,421 | 1,023 | 0 |
-| | 2: tool result | 3,474 | 21 | 0 |
-
-The final answer was one line ("Saved as `~/.kb/til-2610-git-rebase.md`."), so
-the "Do not repeat full note text." hint worked. A later `llm til` in the same
-conversation had 3,342 input tokens: the 1,023-token note from the tool call
-was in the history again.
 
 Limits:
 
-- If the conversation used tools, its history contains tool calls, and `llm til`
-  sends no tool definitions. `codex/gpt-6-luna` accepted such a history (test
-  with the `llm_time` tool). Other providers can refuse it; then use
-  `llm -c -T Til '...'`.
-- Default model options from `llm models options` are not applied.
-- The command uses `llm.cli.load_conversation`, an internal `llm` function. A
-  test fails if a new `llm` release changes it.
-
-## Compared to llm-tools-edit
-
-The tools are a subset of
-[simonw/llm-tools-edit](https://github.com/simonw/llm-tools-edit) `Filesystem`
-(`create`, `view`, `str_replace` and `list_files`), plus `search`. Not included:
-`insert` (use `str_replace` on a unique anchor), line numbers and `view_range`,
-`max_lines` and `max_chars`, `MemoryFS`, `SQLiteFS`, and a configurable root
-directory.
-
-`Til_search` is pure Python, not a call to `rg` or `grep`. It has the same output
-format as `grep -n -i -C3`, but it needs no external program, has the same
-behavior on Linux and macOS, ignores `~/.ripgreprc` and locale settings, and
-applies the same file name and symlink checks as the other tools, while it 
-allows easier limits implementation and enforcing.
+- A history with tool calls goes without tool definitions. `codex/gpt-6-luna`
+  accepts it; other providers can refuse it (then use `llm -c -T Til`).
+- Default options from `llm models options` are not applied.
+- It uses the internal `llm.cli.load_conversation`; a test catches changes.
 
 ## Development
 
 ```bash
-uv sync                                     # installs this package into .venv
+uv sync                          # builds this package (editable) into .venv; sets its version
 uv run pytest
+uv run llm plugins               # version of the local build, e.g. 0.1.0.post2+g1a2b3c4
 uv run llm tools list | grep Til_
-uv build
+uv run llm til --help            # the local code runs; no build or install needed
+uv run --with llm-openai-codex llm -m codex/gpt-6-luna -T Til 'List my notes.'
 ```
 
-The tests set `HOME` to a temporary directory, so they never touch the real
-`~/.kb/`, and `LLM_USER_PATH` to a temporary directory for the `llm` logs. The
-tests of `-T Til` and `llm til` run the `llm` CLI with the `echo` model from
-[llm-echo](https://github.com/simonw/llm-echo), which replies with the prompt
-it got as JSON and replays tool calls from the prompt.
+- Version: `uv sync` (also done by `uv run`) builds the package, and `hatch-vcs`
+  then takes the version from `git describe`: `0.1.0` on the tag,
+  `0.1.0.postN+g<hash>` N commits later (`post-release` scheme), `.d<date>`
+  added for uncommitted changes. `[tool.uv] cache-keys` makes uv rebuild after
+  a new commit or tag.
+- `uv run llm` uses the same `llm` user directory (keys, logs) as the global
+  `llm`, unless `LLM_USER_PATH` is set, so `uv run llm til` can save a
+  conversation of the global `llm`. The `.venv` has no model plugins: add one
+  with `--with`.
+- Sandbox (e.g. Claude Code): `~/.cache/uv` can be read-only. Point uv to a
+  writable cache with `UV_CACHE_DIR="$TMPDIR/uv-cache"` (or `--cache-dir`).
+- `llm` reads stdin if it is not a terminal, so use `</dev/null` in scripts.
+
+Tests use a temporary `HOME` (never the real `~/.kb/`) and `LLM_USER_PATH`; CLI
+tests use the `echo` model of [llm-echo](https://github.com/simonw/llm-echo).
 
 `.github/workflows/test.yml` runs the tests with Python 3.10-3.14 on each push
 to `master`, on pull requests, and once a month.
 
 `uv.lock` is not committed: this is a library, and unlocked resolution finds
-problems with new `llm` releases early. `[tool.uv] exclude-newer` keeps package
-releases newer than 34 hours out of every resolution.
+problems with new `llm` releases early. It has no version of this package (dynamic).
+`[tool.uv] exclude-newer` keeps package releases newer than 34 hours out of every resolution.
 
 ## Release
 
-- Before a release, `uv run pytest` and `uv build` must pass.
-- Set `version` (`X.Y.Z`) in `pyproject.toml` in the last commit of the release.
-  There is no separate version (bump) commit. A version is never used again.
-- Put an annotated tag `vX.Y.Z` directly on that commit. The tag message is the
-  release notes:
-  `git tag -a vX.Y.Z -m "Release X.Y.Z" -m "- change 1"`
-- Push the branch and the tag: `git push origin master --follow-tags`.
-- Make the GitHub release from the tag:
-  `gh release create vX.Y.Z --notes-from-tag --verify-tag`.
-- There is no PyPI publication at the moment. Users install from GitHub, with
-  `@vX.Y.Z` for a fixed release.
+Design rule: a GitHub release comes from `git push` (of a tag), so no `gh` needed,
+no version commit: the git tag is the only place of the version.
 
-If PyPI publication is decided later:
+- Version: from the tag (`hatch-vcs`); see [Development](#development).
+- Tags: annotated only (`git tag -a`). The tag message is the release notes,
+  separate from the commit messages, and `git push --follow-tags` sends the
+  tag with the branch. Lightweight tags would lack a message, and would need a
+  separate tag push to origin, hence are suboptimal.
+- Use `git config push.followTags true` to not have to use --follow-tags with push
+- `.github/workflows/release.yml` runs on a pushed `v*` tag: it checks that the
+  tag is an annotated `vX.Y.Z`, runs the tests, checks that the built wheel has
+  the tag version, then runs `gh release create --notes-from-tag` in GitHub
+  Actions.
+- We use `v1.2.3` and `1.2.3`:
+  - `v1.2.3`: git tag, GitHub release, `llm install '...@v1.2.3'`.
+  - `1.2.3`: Python version (package metadata, `llm plugins`, wheel and sdist names);
 
-- Add `.github/workflows/publish.yml` as in `llm-tool-brave`: on a published
-  release, test the built wheel (`uv sync --all-groups --no-editable`), run
-  `uv build`, and publish with `pypa/gh-action-pypi-publish`.
+### Steps for a release
+
+```bash
+uv run pytest && uv build              # 1. checks pass (version: 0.1.0.postN+g<hash>)
+tmp/release-notes.sh                   # 2. (optional) see commits since the last release
+git tag -a v0.2.0 -m "Release 0.2.0" -m "<notes>"  # 3. annotated tag on HEAD; notes e.g. from 2
+tmp/release-notes.sh v0.2.0            # 4. (optional) check the notes
+git push --follow-tags                 # 5. branch and tag; release.yml makes the release
+```
+
+Troubleshooting:
+- Wrong tag before the push: `git tag -d v0.2.0`, then tag again.
+- `release.yml` failed after the push: no release exists. Remove the tag
+  (`git push origin :refs/tags/v0.2.0` and `git tag -d v0.2.0`), fix, tag and
+  push again. Never move the tag of a published release; release a new version.
+
+### PyPI
+
+There is no PyPI publication at the moment. If it is decided later:
+
+- Add a `publish` job to `release.yml` (`uv build`, then
+  `pypa/gh-action-pypi-publish`; `permissions: id-token: write`; environment
+  `pypi`). A separate workflow `on: release` does not work here: a release made
+  with the workflow token starts no other workflow.
 - On pypi.org, add a pending trusted publisher: project `llm-tool-til`,
-  repository `rdslw/llm-tool-til`, workflow `publish.yml`, environment `pypi`.
+  repository `rdslw/llm-tool-til`, workflow `release.yml`, environment `pypi`.
 - In the GitHub repository settings, add the environment `pypi`.
 - Add `llm install llm-tool-til` to [Installation](#installation).
