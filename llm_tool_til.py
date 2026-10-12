@@ -7,6 +7,7 @@ in ~/.kb/. They can create only notes named til-YYMM-<slug>.md, and edit only .m
 The `llm til` command writes a note of a logged conversation with one request.
 """
 
+import functools
 import re
 import time
 import unicodedata
@@ -27,6 +28,8 @@ MAX_SEARCH_LINES = 600  # matches plus context lines
 SEARCH_CONTEXT = 3  # lines before and after a match, like grep -C3
 MAX_LINE_CHARS = 200  # for one Til_search output line
 MAX_SUFFIX = 99  # llm til: til-YYMM-<slug>-2.md ... -99.md when the name is in use
+LLM_CHAIN_LIMIT = 5  # the --cl default of llm prompt and llm chat
+TIL_CHAIN_LIMIT = 20  # replaces LLM_CHAIN_LIMIT with -T Til, if --cl is not given
 TIL_PROMPT = (
     "Write a markdown TIL note of this conversation for a senior engineer who will reread it to "
     "recall the topic: key facts, decisions, commands, pitfalls. Be concise; use lists; "
@@ -202,8 +205,32 @@ def register_tools(register):
     register(Til)
 
 
+def _raise_chain_limit(command):
+    # Wrap the callback of llm prompt or llm chat: with -T Til and no --cl, a chain
+    # limit of LLM_CHAIN_LIMIT becomes TIL_CHAIN_LIMIT. Another value (a new llm
+    # default, or one set by another plugin) stays.
+    callback = command.callback
+
+    @functools.wraps(callback)
+    def wrapper(*args, **kwargs):
+        ctx = click.get_current_context()
+        if (
+            ctx.get_parameter_source("chain_limit") is click.core.ParameterSource.DEFAULT
+            and kwargs.get("chain_limit") == LLM_CHAIN_LIMIT
+            and any(spec.split("(")[0] == "Til" for spec in kwargs.get("tools") or ())
+        ):
+            kwargs["chain_limit"] = TIL_CHAIN_LIMIT
+        return callback(*args, **kwargs)
+
+    command.callback = wrapper
+
+
 @llm.hookimpl
 def register_commands(cli):
+    for name in ("prompt", "chat"):
+        if name in cli.commands:
+            _raise_chain_limit(cli.commands[name])
+
     @cli.command(name="til")
     @click.argument("prompt", required=False)
     @click.option(

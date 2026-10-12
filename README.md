@@ -52,6 +52,13 @@ llm til 'Write a primer of the asyncio part only.' --slug asyncio-primer
 llm til --cid 01k0abcd...
 ```
 
+Chain limit: with `-T Til`, `llm prompt` and `llm chat` allow 20 chained tool
+responses, not the `llm` default of 5. `--cl N` sets another value. The plugin
+changes only the value 5: if a new `llm` release or another plugin sets a
+different default, that value stays. It wraps the internal callbacks of
+`llm prompt` and `llm chat`; tests catch changes. A conversation continued with
+`llm -c` but without a new `-T Til` keeps the `llm` default.
+
 ## Tools implemented
 
 | Tool | Use |

@@ -2,6 +2,7 @@ import json
 import os
 import time
 
+import llm
 import pytest
 from click.testing import CliRunner
 from llm.cli import cli
@@ -335,6 +336,54 @@ def test_cli_tool_call_with_echo_model(kb, tmp_path, monkeypatch):
 def run_llm(kb, tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_USER_PATH", str(tmp_path / "llm"))
     return lambda *args: CliRunner().invoke(cli, list(args))
+
+
+@pytest.fixture
+def chain_limits(monkeypatch):
+    # The chain_limit values that llm prompt gives to Conversation.chain().
+    seen = []
+    chain = llm.Conversation.chain
+
+    def spy(self, *args, **kwargs):
+        seen.append(kwargs.get("chain_limit"))
+        return chain(self, *args, **kwargs)
+
+    monkeypatch.setattr(llm.Conversation, "chain", spy)
+    return seen
+
+
+def chain_limit_option(command):
+    return next(p for p in cli.commands[command].params if p.name == "chain_limit")
+
+
+@pytest.mark.parametrize("command", ["prompt", "chat"])
+def test_llm_chain_limit_default_is_unchanged(command):
+    # If llm changes its --cl default, LLM_CHAIN_LIMIT needs a check.
+    assert chain_limit_option(command).default == llm_tool_til.LLM_CHAIN_LIMIT
+
+
+@pytest.mark.parametrize(
+    "args, limit",
+    [
+        (["-T", "Til"], llm_tool_til.TIL_CHAIN_LIMIT),
+        (["-T", "llm_version", "-T", "Til"], llm_tool_til.TIL_CHAIN_LIMIT),
+        (["-T", "Til", "--cl", "5"], 5),
+        (["-T", "Til", "--cl", "3"], 3),
+        (["-T", "llm_version"], llm_tool_til.LLM_CHAIN_LIMIT),
+    ],
+)
+def test_til_raises_default_chain_limit(run_llm, chain_limits, args, limit):
+    result = run_llm("-m", "echo", *args, "hi")
+    assert result.exit_code == 0, result.output
+    assert chain_limits == [limit]
+
+
+def test_til_keeps_changed_default_chain_limit(run_llm, chain_limits, monkeypatch):
+    # A default other than LLM_CHAIN_LIMIT (new llm release, other plugin) stays.
+    monkeypatch.setattr(chain_limit_option("prompt"), "default", 7)
+    result = run_llm("-m", "echo", "-T", "Til", "hi")
+    assert result.exit_code == 0, result.output
+    assert chain_limits == [7]
 
 
 def logged(run_llm):
