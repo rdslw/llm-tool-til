@@ -6,11 +6,12 @@ readme = "README.md"
 authors = [
     {name = "Radoslaw Stachowiak"},
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 keywords = ["llm", "llm-plugin", "til", "notes", "markdown"]
 dependencies = [
-    "llm>=0.26",
+    # llm 0.26-0.32 import httpx without a dependency on it; openai 3.x no longer installs it.
+    "llm>=0.33",
 ]
 
 [project.urls]
@@ -21,6 +22,7 @@ Issues = "https://github.com/rdslw/llm-tool-til/issues"
 til = "llm_tool_til"
 
 [dependency-groups]
+# The lower bound keeps the lowest-direct CI job from selecting pytest 2.0.
 dev = ["pytest>=8", "llm-echo>=0.4"]
 
 [build-system]

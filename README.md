@@ -19,7 +19,9 @@ markdown format. The plugin only stores the notes safely.
 
 ## Installation
 
-The package is not on PyPI. Install it into the `llm` environment with one of:
+Requires Python 3.11 or later and `llm` 0.33 or later; on Python 3.10, install
+`v0.2.0` (append `@v0.2.0` to the GitHub URL). The package is not on PyPI.
+Install it into the `llm` environment with one of:
 
 ```bash
 # from a local checkout; -e (editable): changes in the directory apply at once
@@ -195,8 +197,12 @@ uv run --with llm-openai-codex llm -m codex/gpt-6-luna -T Til 'List my notes.'
 Tests use a temporary `HOME` (never the real `~/.kb/`) and `LLM_USER_PATH`; CLI
 tests use the `echo` model of [llm-echo](https://github.com/simonw/llm-echo).
 
-`.github/workflows/test.yml` runs the tests with Python 3.10-3.14 on each push
-to `master`, on pull requests, and once a month.
+`.github/workflows/test.yml` runs the tests with Python 3.11-3.15 on each push
+to `master`, on pull requests, and once a month. The job `test-lowest` runs them
+with the lowest versions that `pyproject.toml` allows for the direct dependencies
+(`llm`, `llm-echo`, `pytest`), on Python 3.11. Local equivalent:
+`UV_RESOLUTION=lowest-direct UV_PYTHON=3.11 uv run pytest` (it changes `.venv`
+and `uv.lock`; run `uv sync` after it).
 
 `uv.lock` is not committed: this is a library, and unlocked resolution finds
 problems with new `llm` releases early. It has no version of this package (dynamic).

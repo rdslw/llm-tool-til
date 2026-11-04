@@ -22,23 +22,61 @@ jobs:
       # we want the full answer to "which Python versions break?"
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
 
     steps:
       - uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
+      # setup-uv publishes no major tags since v8: pin the full version.
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.3.0
         with:
           enable-cache: true
 
       - name: Install dependencies
         run: uv sync --all-groups
+
+      - name: Run tests
+        run: uv run pytest
+
+  # The lowest versions of the direct dependencies that pyproject.toml allows
+  # (llm, llm-echo, pytest), on the oldest supported Python. Transitive
+  # dependencies resolve to their newest versions.
+  # Why: pip and uv do not upgrade an installed dependency that already
+  # satisfies a lower bound, so users can run the plugin on llm 0.33. The
+  # matrix above tests only the newest versions, so it cannot find code that
+  # uses an API newer than a lower bound. The fix is a higher lower bound or
+  # compatible code.
+  test-lowest:
+    runs-on: ubuntu-latest
+    # Set for the full job, not as a flag on uv sync: without it, uv run
+    # re-locks with the default (newest) resolution and gives no message,
+    # so the tests would run on the newest versions.
+    env:
+      UV_RESOLUTION: lowest-direct
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+
+      - name: Install lowest direct dependencies
+        run: uv sync --all-groups
+
+      - name: Show resolved versions
+        run: uv pip list | grep -E '^(llm|llm-echo|pytest) '
 
       - name: Run tests
         run: uv run pytest

@@ -24,13 +24,21 @@ jobs:
           [ "$(git cat-file -t "$GITHUB_REF_NAME")" = tag ] \
             || { echo "::error::tag '$GITHUB_REF_NAME' is lightweight; use git tag -a"; exit 1; }
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
 
-      - uses: astral-sh/setup-uv@v6
+      # setup-uv publishes no major tags since v8: pin the full version.
+      - uses: astral-sh/setup-uv@v10.3.0
 
+      # Install the built wheel instead of uv's default editable install, so
+      # packaging bugs (file missing from the wheel) surface here, before the
+      # release. Set for the step, not as a flag on uv sync: without it,
+      # uv run installs the project as editable again and gives no message,
+      # so the tests would run on the source tree.
       - name: Test
+        env:
+          UV_NO_EDITABLE: "1"
         run: |
           uv sync --all-groups
           uv run pytest
