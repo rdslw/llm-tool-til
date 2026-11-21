@@ -218,6 +218,13 @@ def test_view_refuses_too_large_file(til, kb):
         til.view("big.txt")
 
 
+def test_head_description_and_schema_give_the_default(til):
+    # A docstring cannot use HEAD_LINES, so check that it gives the same value.
+    tool = next(tool for tool in til.method_tools() if tool.name == "Til_head")
+    assert f"first {llm_tool_til.HEAD_LINES} lines" in tool.description
+    assert tool.input_schema["properties"]["lines"]["default"] == llm_tool_til.HEAD_LINES
+
+
 def test_head_returns_first_lines_with_a_note(til, kb):
     (kb / "notes.txt").write_text("".join(f"line {n}\n" for n in range(1, 51)))
     default = til.head("notes.txt").splitlines()
