@@ -121,8 +121,7 @@ Limits (constants in `llm_tool_til.py`):
 ## Context Cost
 
 - `-T Til` adds the six tool definitions to every request: about 505 tokens
-  as JSON (budget 530). `codex/gpt-6-luna` billed the five tools before
-  `Til_head` (about 420 tokens as JSON) as 244. Measure:
+  as JSON (budget 530). `codex/gpt-6-luna` bills them as 286. Measure:
   `llm -u -m MODEL 'hi'` with and without `-T Til`.
 - Each tool call is one more request with the full conversation, so a note
   costs the conversation at least twice. The note text is input again in later
@@ -221,6 +220,12 @@ no version commit: the git tag is the only place of the version.
   separate from the commit messages, and `git push --follow-tags` sends the
   tag with the branch. Lightweight tags would lack a message, and would need a
   separate tag push to origin, hence are suboptimal.
+- Tag message: the first line is `Release X.Y.Z` (all tags since `v0.1.0`; not
+  `release: vX.Y.Z`), then an empty line, then the notes in markdown. For long
+  notes, write the message to a file and use `-F <file>` in place of `-m`.
+- `--cleanup=whitespace` is necessary for markdown notes: the default mode of
+  `git tag` (`strip`) removes each line that starts with `#`, so the `##`
+  headings would go, and `git` gives no warning.
 - Use `git config push.followTags true` to not have to use --follow-tags with push
 - `.github/workflows/release.yml` runs on a pushed `v*` tag: it checks that the
   tag is an annotated `vX.Y.Z`, runs the tests, checks that the built wheel has
@@ -235,7 +240,7 @@ no version commit: the git tag is the only place of the version.
 ```bash
 uv run pytest && uv build              # 1. checks pass (version: 0.1.0.postN+g<hash>)
 tmp/release-notes.sh                   # 2. (optional) see commits since the last release
-git tag -a v0.2.0 -m "Release 0.2.0" -m "<notes>"  # 3. annotated tag on HEAD; notes e.g. from 2
+git tag -a v0.2.0 --cleanup=whitespace -m "Release 0.2.0" -m "<notes>"  # 3. annotated tag on HEAD; notes e.g. from 2
 tmp/release-notes.sh v0.2.0            # 4. (optional) check the notes
 git push --follow-tags                 # 5. branch and tag; release.yml makes the release
 ```
