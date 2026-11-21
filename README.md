@@ -68,6 +68,7 @@ different default, that value stays. It wraps the internal callbacks of
 | `Til_create(slug, content)` | Create the note `til-YYMM-<slug>.md`. Fails if the file exists. The result tells the model not to repeat the note text. |
 | `Til_str_replace(filename, old_str, new_str)` | Replace text that occurs exactly once in a `.md` or `.txt` file. |
 | `Til_view(filename)` | Return the full text of a file. |
+| `Til_head(filename, lines=40)` | Return the first `lines` lines of a file. If the file has more lines, a last line gives the count and points to `Til_view`. |
 | `Til_list_files()` | List the file names, newest first. |
 | `Til_search(query)` | Find `query` (plain text, case-insensitive) in all files (newest first). |
 
@@ -113,21 +114,23 @@ Limits (constants in `llm_tool_til.py`):
 | Limit | Value |
 | --- | --- |
 | One file, written by `Til_create` or `Til_str_replace` | 100 KB (102400 bytes UTF-8) and 2000 lines |
-| One file, read by `Til_view` or `Til_str_replace` | 100 KB |
+| One file, read by `Til_view`, `Til_head` or `Til_str_replace` | 100 KB |
 | `Til_list_files` output | 400 names, then a line with the count of older files |
 | `Til_search` output | 100 matching lines, 600 lines with context; each line cut to 200 characters; only the first 102400 characters of each file |
 
 ## Context Cost
 
-- `-T Til` adds the five tool definitions to every request: about 420 tokens
-  as JSON (budget 450). `codex/gpt-6-luna` bills them as 244. Measure:
+- `-T Til` adds the six tool definitions to every request: about 505 tokens
+  as JSON (budget 530). `codex/gpt-6-luna` billed the five tools before
+  `Til_head` (about 420 tokens as JSON) as 244. Measure:
   `llm -u -m MODEL 'hi'` with and without `-T Til`.
 - Each tool call is one more request with the full conversation, so a note
   costs the conversation at least twice. The note text is input again in later
   requests. `llm til` avoids both.
 - Caching makes repeats cheaper; check `cached_tokens` in `llm logs --json`.
 - One tool result costs at most about 4,000 (`Til_list_files`), 25,000
-  (`Til_view`) or 35,000 tokens (`Til_search`).
+  (`Til_view`, and `Til_head` if the first lines are very long) or 35,000
+  tokens (`Til_search`).
 - Keep the docstrings (tool descriptions) short; error guidance goes in the
   error messages. Recount after a change:
 

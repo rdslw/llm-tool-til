@@ -45,7 +45,14 @@ def test_tool_names_use_til_prefix(til):
     # llm 0.32+ finds the toolbox for llm -c from the "Til_" prefix.
     # method_tools() exists in llm 0.26 and later; tools() came later.
     names = sorted(tool.name for tool in til.method_tools())
-    assert names == ["Til_create", "Til_list_files", "Til_search", "Til_str_replace", "Til_view"]
+    assert names == [
+        "Til_create",
+        "Til_head",
+        "Til_list_files",
+        "Til_search",
+        "Til_str_replace",
+        "Til_view",
+    ]
 
 
 def test_create_writes_note(til, kb):
@@ -83,6 +90,7 @@ def test_all_tools_fail_if_kb_dir_is_missing(til, kb):
     for call in [
         lambda: til.create("topic", "text"),
         lambda: til.view("til-2610-topic.md"),
+        lambda: til.head("til-2610-topic.md"),
         lambda: til.str_replace("til-2610-topic.md", "a", "b"),
         til.list_files,
         lambda: til.search("text"),
@@ -124,6 +132,8 @@ def test_view_missing_file(til):
 def test_bad_filenames_are_refused(til, filename):
     with pytest.raises(ValueError, match="Invalid file name"):
         til.view(filename)
+    with pytest.raises(ValueError, match="Invalid file name"):
+        til.head(filename)
     with pytest.raises(ValueError, match="Invalid file name"):
         til.str_replace(filename, "a", "b")
 
@@ -206,6 +216,42 @@ def test_view_refuses_too_large_file(til, kb):
     (kb / "big.txt").write_text("x" * (100 * 1024 + 1))
     with pytest.raises(ValueError, match="larger than 102400 bytes"):
         til.view("big.txt")
+
+
+def test_head_returns_first_lines_with_a_note(til, kb):
+    (kb / "notes.txt").write_text("".join(f"line {n}\n" for n in range(1, 51)))
+    default = til.head("notes.txt").splitlines()
+    assert default[:40] == [f"line {n}" for n in range(1, 41)]
+    assert default[40:] == ["[40 of 50 lines shown; use Til_view for the full text]"]
+    assert til.head("notes.txt", 2) == (
+        "line 1\nline 2\n[2 of 50 lines shown; use Til_view for the full text]"
+    )
+
+
+@pytest.mark.parametrize("text", ["", "one\ntwo\n", "one\ntwo"])
+@pytest.mark.parametrize("lines", [2, 40])
+def test_head_returns_full_text_of_short_file(til, kb, text, lines):
+    (kb / "notes.txt").write_text(text)
+    assert til.head("notes.txt", lines) == text
+
+
+@pytest.mark.parametrize("lines", [0, -1])
+def test_head_refuses_bad_line_count(til, kb, lines):
+    (kb / "notes.txt").write_text("one\n")
+    with pytest.raises(ValueError, match="lines must be 1 or more"):
+        til.head("notes.txt", lines)
+
+
+def test_head_applies_the_file_checks_of_view(til, kb, tmp_path):
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        til.head("til-2610-missing.md")
+    (kb / "big.txt").write_text("x" * (100 * 1024 + 1))
+    with pytest.raises(ValueError, match="larger than 102400 bytes"):
+        til.head("big.txt")
+    (tmp_path / "secret.md").write_text("secret\n")
+    (kb / "til-2610-link.md").symlink_to(tmp_path / "secret.md")
+    with pytest.raises(ValueError, match="symlink"):
+        til.head("til-2610-link.md")
 
 
 def test_list_files_without_files(til):

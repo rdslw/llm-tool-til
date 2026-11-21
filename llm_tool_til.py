@@ -22,6 +22,7 @@ EDIT_EXTENSIONS = {"md", "txt"}
 MAX_SLUG_LENGTH = 60
 MAX_BYTES = 100 * 1024  # for one file
 MAX_LINES = 2000  # for one file that the tools write
+HEAD_LINES = 40  # the default of Til_head
 MAX_LIST_LINES = 400
 MAX_SEARCH_MATCHES = 100
 MAX_SEARCH_LINES = 600  # matches plus context lines
@@ -144,6 +145,17 @@ class Til(llm.Toolbox):
     def view(self, filename: str) -> str:
         """Return the full text of a file."""
         return self._read(filename)
+
+    def head(self, filename: str, lines: int = HEAD_LINES) -> str:
+        """Quick preview of a file: its first 40 lines, or set `lines`."""
+        if lines < 1:
+            raise ValueError("lines must be 1 or more")
+        text = self._read(filename).splitlines(keepends=True)
+        if len(text) <= lines:
+            return "".join(text)
+        # More lines follow, so each shown line ends with a line break.
+        note = f"[{lines} of {len(text)} lines shown; use Til_view for the full text]"
+        return "".join(text[:lines]) + note
 
     def str_replace(self, filename: str, old_str: str, new_str: str) -> str:
         """Edit a .md or .txt file: replace old_str, which must occur exactly once, with
